@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>VIPER — Neuromorphic Thermal Tracking</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0a0f;
+    color: #e0e0e0;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px;
+  }
+
+  h1 {
+    font-size: 1.4rem;
+    letter-spacing: 0.15em;
+    color: #ff6b35;
+    margin-bottom: 4px;
+  }
+  .tagline {
+    font-size: 0.75rem;
+    color: #666;
+    letter-spacing: 0.08em;
+    margin-bottom: 24px;
+  }
+
+  .main {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  /* ─── Canvases ──────────────────────────────────────── */
+  .canvas-col {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .canvas-label {
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    color: #555;
+    text-transform: uppercase;
+  }
+  canvas {
+    display: block;
+    border: 1px solid #1e1e2e;
+    image-rendering: pixelated;
+  }
+  #canvas-events { background: #000; }
+  #canvas-membrane { background: #000; }
+
+  /* ─── Stats panel ───────────────────────────────────── */
+  .stats {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 220px;
+  }
+
+  .card {
+    background: #0f0f1a;
+    border: 1px solid #1e1e2e;
+    border-radius: 6px;
+    padding: 14px 16px;
+  }
+  .card-title {
+    font-size: 0.6rem;
+    letter-spacing: 0.12em;
+    color: #555;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  .metric {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+  }
+  .metric-label { font-size: 0.7rem; color: #888; }
+  .metric-value { font-size: 1rem; color: #e0e0e0; }
+  .metric-value.green  { color: #3ddc84; }
+  .metric-value.orange { color: #ff6b35; }
+  .metric-value.blue   { color: #4fc3f7; }
+
+  /* ─── Latency bar ───────────────────────────────────── */
+  .lat-bar-wrap {
+    margin-top: 6px;
+  }
+  .lat-bar-bg {
+    background: #1a1a2e;
+    border-radius: 3px;
+    height: 6px;
+    width: 100%;
+    overflow: hidden;
+  }
+  .lat-bar-fill {
+    height: 100%;
+    background: #3ddc84;
+    border-radius: 3px;
+    transition: width 0.3s ease;
+  }
+  .lat-compare {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 4px;
+    font-size: 0.6rem;
+    color: #555;
+  }
+
+  /* ─── 3D coords ─────────────────────────────────────── */
+  .coords {
+    font-size: 1.5rem;
+    color: #4fc3f7;
+    text-align: center;
+    padding: 8px 0;
+    letter-spacing: 0.05em;
+  }
+  .coords span { font-size: 0.65rem; color: #555; margin: 0 2px; }
+
+  /* ─── Status dot ────────────────────────────────────── */
+  .status-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.65rem;
+    color: #555;
+    margin-bottom: 16px;
+  }
+  .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #333;
+    transition: background 0.2s;
+  }
+  .dot.live { background: #3ddc84; box-shadow: 0 0 6px #3ddc84; }
+
+  .legend {
+    display: flex;
+    gap: 12px;
+    font-size: 0.6rem;
+    color: #555;
+    margin-top: 4px;
+  }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+  .legend-dot { width: 6px; height: 6px; border-radius: 50%; }
+</style>
+</head>
+<body>
+
+<h1>⚡ VIPER</h1>
+<p class="tagline">Sub-millisecond neuromorphic thermal target tracking</p>
+
+<div class="status-row">
+  <div class="dot" id="dot"></div>
+  <span id="status-text">Connecting...</span>
+</div>
+
+<div class="main">
+
+  <!-- Left: event canvas + membrane canvas -->
+  <div class="canvas-col">
+    <div class="canvas-label">Event Surface — DVS stream (left + right cameras)</div>
+    <canvas id="canvas-events" width="346" height="260" style="width:520px;height:390px;"></canvas>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#3ddc84"></div> ON event (cam 0)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#ff4444"></div> OFF event</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#4fc3f7"></div> VIPER track</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#ffeb3b;opacity:0.5"></div> Ground truth</div>
+    </div>
+    <div class="canvas-label" style="margin-top:8px">LIF Membrane Potential</div>
+    <canvas id="canvas-membrane" width="346" height="260" style="width:520px;height:390px;"></canvas>
+  </div>
+
+  <!-- Right: stats panel -->
+  <div class="stats">
+
+    <div class="card">
+      <div class="card-title">3D Track Output</div>
+      <div class="coords" id="coords">—</div>
+      <div class="metric">
+        <span class="metric-label">Confidence</span>
+        <span class="metric-value green" id="conf">—</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Latency</div>
+      <div class="metric">
+        <span class="metric-label">Last detection</span>
+        <span class="metric-value green" id="lat-last">—</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Mean (last 50)</span>
+        <span class="metric-value green" id="lat-mean">—</span>
+      </div>
+      <div class="lat-bar-wrap">
+        <div class="lat-bar-bg">
+          <div class="lat-bar-fill" id="lat-bar" style="width:1%"></div>
+        </div>
+        <div class="lat-compare">
+          <span>VIPER →</span>
+          <span>← 30Hz frame (33,333 µs)</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Pipeline Stats</div>
+      <div class="metric">
+        <span class="metric-label">Events processed</span>
+        <span class="metric-value blue" id="n-events">—</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Spikes fired</span>
+        <span class="metric-value orange" id="n-spikes">—</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Depth hits</span>
+        <span class="metric-value green" id="n-hits">—</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Spike rate</span>
+        <span class="metric-value" id="spike-rate">—</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Pipeline</div>
+      <div style="font-size:0.65rem;line-height:2;color:#555">
+        <div style="color:#ff6b35">① IMU warp</div>
+        <div style="padding-left:8px;color:#333">↓ gyro @ 1000 Hz</div>
+        <div style="color:#ff6b35">② PSF deconv</div>
+        <div style="padding-left:8px;color:#333">↓ 7×7 Gaussian/event</div>
+        <div style="color:#ff6b35">③ LIF neurons</div>
+        <div style="padding-left:8px;color:#333">↓ β=0.95, θ=0.5</div>
+        <div style="color:#ff6b35">④ Stereo Δt</div>
+        <div style="padding-left:8px;color:#4fc3f7">→ TrackState(x,y,z)</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const CEV  = document.getElementById('canvas-events');
+const CMEM = document.getElementById('canvas-membrane');
+const ctxEv  = CEV.getContext('2d');
+const ctxMem = CMEM.getContext('2d');
+
+const W = 346, H = 260;
+let imgEv  = ctxEv.createImageData(W, H);
+let imgMem = ctxMem.createImageData(W, H);
+
+// Fading event surface (persists across frames for visibility)
+let evSurface = new Float32Array(W * H);  // per-pixel brightness [-1,+1]
+let memSurface = new Float32Array(W * H);
+
+function clearPixel(img, i) {
+  img.data[i*4+3] = 0;
+}
+
+function setPixel(img, x, y, r, g, b, a=255) {
+  const i = (y * W + x) * 4;
+  img.data[i]   = r;
+  img.data[i+1] = g;
+  img.data[i+2] = b;
+  img.data[i+3] = a;
+}
+
+let trackPos = null;
+let gtPos = null;
+
+function renderEventCanvas() {
+  // Decay surface
+  for (let i = 0; i < evSurface.length; i++) evSurface[i] *= 0.82;
+
+  // Clear to black
+  for (let i = 0; i < imgEv.data.length; i += 4) {
+    imgEv.data[i]   = 0;
+    imgEv.data[i+1] = 0;
+    imgEv.data[i+2] = 0;
+    imgEv.data[i+3] = 255;
+  }
+
+  // Draw event surface
+  for (let idx = 0; idx < W * H; idx++) {
+    const v = evSurface[idx];
+    if (Math.abs(v) < 0.02) continue;
+    const x = idx % W, y = Math.floor(idx / W);
+    const intensity = Math.min(255, Math.abs(v) * 255);
+    if (v > 0) setPixel(imgEv, x, y, 0, intensity, 60, 255);
+    else        setPixel(imgEv, x, y, intensity, 40, 40, 255);
+  }
+
+  // Ground truth crosshair (yellow, dim)
+  if (gtPos) {
+    const gx = Math.round(gtPos.x), gy = Math.round(gtPos.y);
+    for (let d = -8; d <= 8; d++) {
+      if (d === 0) continue;
+      if (gx+d >= 0 && gx+d < W) setPixel(imgEv, gx+d, gy, 80, 70, 0, 140);
+      if (gy+d >= 0 && gy+d < H) setPixel(imgEv, gx, gy+d, 80, 70, 0, 140);
+    }
+  }
+
+  // VIPER track crosshair (cyan, bright)
+  if (trackPos) {
+    const tx = Math.round(trackPos.x), ty = Math.round(trackPos.y);
+    for (let d = -12; d <= 12; d++) {
+      if (d >= -2 && d <= 2) continue;  // gap at center
+      if (tx+d >= 0 && tx+d < W) setPixel(imgEv, tx+d, ty, 79, 195, 247, 255);
+      if (ty+d >= 0 && ty+d < H) setPixel(imgEv, tx, ty+d, 79, 195, 247, 255);
+    }
+    // Center dot
+    for (let dy = -2; dy <= 2; dy++)
+      for (let dx = -2; dx <= 2; dx++)
+        setPixel(imgEv, tx+dx, ty+dy, 255, 255, 255, 255);
+  }
+
+  ctxEv.putImageData(imgEv, 0, 0);
+}
+
+function renderMembraneCanvas() {
+  for (let i = 0; i < W * H; i++) {
+    const v = Math.max(0, Math.min(1, memSurface[i]));
+    const ix = i * 4;
+    // Hot colormap: black → dark red → orange → yellow → white
+    let r, g, b;
+    if (v < 0.33) { r = v*3*180; g = 0; b = 0; }
+    else if (v < 0.66) { const t = (v-0.33)*3; r = 180+t*75; g = t*160; b = 0; }
+    else { const t = (v-0.66)*3; r = 255; g = 160+t*95; b = t*255; }
+    imgMem.data[ix]   = r;
+    imgMem.data[ix+1] = g;
+    imgMem.data[ix+2] = b;
+    imgMem.data[ix+3] = 255;
+  }
+  // Decay membrane display
+  for (let i = 0; i < memSurface.length; i++) memSurface[i] *= 0.88;
+  ctxMem.putImageData(imgMem, 0, 0);
+}
+
+// ─── WebSocket ───────────────────────────────────────────────
+
+function connect() {
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+
+  ws.onopen = () => {
+    document.getElementById('dot').className = 'dot live';
+    document.getElementById('status-text').textContent = 'Live — streaming events';
+  };
+
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+
+    // Stamp events onto surface
+    for (const ev of msg.events) {
+      const idx = ev.y * W + ev.x;
+      evSurface[idx] = ev.p > 0 ? 1.0 : -1.0;
+      // Update membrane heat
+      if (idx >= 0 && idx < memSurface.length)
+        memSurface[idx] = Math.min(1.0, memSurface[idx] + 0.25);
+    }
+
+    gtPos = msg.gt;
+    if (msg.track) {
+      trackPos = msg.track;
+      const t = msg.track;
+
+      document.getElementById('coords').innerHTML =
+        `<span>x</span>${t.x} <span>y</span>${t.y} <span>z</span>${t.z}m`;
+      document.getElementById('conf').textContent = (t.conf * 100).toFixed(0) + '%';
+      document.getElementById('lat-last').textContent = t.lat_us.toFixed(0) + ' µs';
+      document.getElementById('lat-mean').textContent = t.mean_us.toFixed(0) + ' µs';
+
+      // Bar: VIPER mean vs 33,333 µs (30Hz)
+      const pct = Math.min(98, (t.mean_us / 33333) * 100);
+      document.getElementById('lat-bar').style.width = Math.max(1, pct) + '%';
+      // Color by threshold
+      const bar = document.getElementById('lat-bar');
+      bar.style.background = t.mean_us < 1000 ? '#3ddc84' :
+                             t.mean_us < 5000 ? '#ffeb3b' : '#ff4444';
+    }
+
+    if (msg.stats) {
+      const s = msg.stats;
+      document.getElementById('n-events').textContent = s.events.toLocaleString();
+      document.getElementById('n-spikes').textContent = s.spikes.toLocaleString();
+      document.getElementById('n-hits').textContent   = s.depth_hits.toLocaleString();
+      document.getElementById('spike-rate').textContent =
+        (s.spike_rate * 100).toFixed(1) + '%';
+    }
+
+    renderEventCanvas();
+    renderMembraneCanvas();
+  };
+
+  ws.onclose = () => {
+    document.getElementById('dot').className = 'dot';
+    document.getElementById('status-text').textContent = 'Disconnected — retrying...';
+    setTimeout(connect, 2000);
+  };
+}
+
+connect();
+</script>
+</body>
+</html>

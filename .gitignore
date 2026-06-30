@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+*.egg-info/
+dist/
+build/
+.env
+data/
+*.db
+viper_phase1_raw.h5
+viper_phase1_trials.csv
+viper_phase1_results.png
+viper_latency_cdf.png
+viper_snntorch_equivalence.png
+.pytest_cache/
