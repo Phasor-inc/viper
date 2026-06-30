@@ -7,7 +7,8 @@ __pycache__/
 dist/
 build/
 .env
-data/
+data/*.h5
+data/*.hdf5
 *.db
 viper_phase1_raw.h5
 viper_phase1_trials.csv
