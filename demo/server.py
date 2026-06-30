@@ -16,7 +16,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 import uvicorn
 
-from engine import SNNViperEngine
+from engine import SNNViperEngine, TrackManager
 from simulation import ThermalScene, EventCamera, IMUSimulator
 from simulation.thermal_scene import TargetMotion
 
@@ -40,7 +40,8 @@ async def stream(ws: WebSocket):
     cam_L  = EventCamera(346, 260, threshold=0.75, cam_id=0, baseline_px=0)
     cam_R  = EventCamera(346, 260, threshold=0.75, cam_id=1, baseline_px=30)
     imu    = IMUSimulator(rate_hz=1000.0)
-    engine = SNNViperEngine(width=346, height=260, focal_length=200.0, baseline=0.10)
+    engine  = SNNViperEngine(width=346, height=260, focal_length=200.0, baseline=0.10)
+    tracker = TrackManager(gate=40.0)
 
     dt = 1.0 / 200.0
     t = 0.0
@@ -62,6 +63,7 @@ async def stream(ws: WebSocket):
 
             event_data = []
             track_data = None
+            confirmed_tracks = []
 
             for ev in sorted(evL + evR, key=lambda e: e.t):
                 event_data.append({
@@ -69,24 +71,34 @@ async def stream(ws: WebSocket):
                     "p": int(ev.polarity),
                     "c": ev.cam,
                 })
-                track = engine.process_event(ev.t, ev.x, ev.y, ev.polarity, ev.cam)
-                if track is not None:
-                    latencies.append(track.latency_us)
-                    track_data = {
-                        "x": round(track.x, 1),
-                        "y": round(track.y, 1),
-                        "z": round(track.z, 2),
-                        "conf": round(track.confidence, 3),
-                        "lat_us": round(track.latency_us, 1),
-                        "mean_us": round(float(np.mean(latencies[-50:])), 1),
-                    }
+                raw = engine.process_event(ev.t, ev.x, ev.y, ev.polarity, ev.cam)
+                if raw is not None:
+                    latencies.append(raw.latency_us)
+                    confirmed_tracks = tracker.update(raw, t=ev.t)
+                    if confirmed_tracks:
+                        tr = confirmed_tracks[0]
+                        track_data = {
+                            "x": round(tr.x, 1),
+                            "y": round(tr.y, 1),
+                            "z": round(tr.z, 2),
+                            "vx": round(tr.vx, 2),
+                            "vy": round(tr.vy, 2),
+                            "speed": round(tr.speed, 2),
+                            "conf": round(tr.confidence, 3),
+                            "track_id": tr.id,
+                            "hits": tr.hits,
+                            "lat_us": round(raw.latency_us, 1),
+                            "mean_us": round(float(np.mean(latencies[-50:])), 1),
+                        }
 
             gt_x, gt_y = scene.target_gt(t)
 
             msg = {
                 "t": round(t, 4),
-                "events": event_data[:300],   # cap to avoid WS overload
+                "events": event_data[:300],
                 "track": track_data,
+                "n_confirmed": tracker.n_confirmed,
+                "n_tentative": tracker.n_tentative,
                 "gt": {"x": round(gt_x, 1), "y": round(gt_y, 1)},
                 "stats": engine.stats,
             }

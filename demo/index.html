@@ -187,8 +187,20 @@
       <div class="card-title">3D Track Output</div>
       <div class="coords" id="coords">—</div>
       <div class="metric">
+        <span class="metric-label">Track ID</span>
+        <span class="metric-value blue" id="track-id">—</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Velocity (px/s)</span>
+        <span class="metric-value orange" id="velocity">—</span>
+      </div>
+      <div class="metric">
         <span class="metric-label">Confidence</span>
         <span class="metric-value green" id="conf">—</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Confirmed / Tentative</span>
+        <span class="metric-value" id="track-counts">—</span>
       </div>
     </div>
 
@@ -376,17 +388,23 @@ function connect() {
 
       document.getElementById('coords').innerHTML =
         `<span>x</span>${t.x} <span>y</span>${t.y} <span>z</span>${t.z}m`;
+      document.getElementById('track-id').textContent = `#${t.track_id}  (${t.hits} hits)`;
+      document.getElementById('velocity').textContent =
+        `vx=${t.vx.toFixed(1)}  vy=${t.vy.toFixed(1)}  |${t.speed.toFixed(1)}|`;
       document.getElementById('conf').textContent = (t.conf * 100).toFixed(0) + '%';
       document.getElementById('lat-last').textContent = t.lat_us.toFixed(0) + ' µs';
       document.getElementById('lat-mean').textContent = t.mean_us.toFixed(0) + ' µs';
 
-      // Bar: VIPER mean vs 33,333 µs (30Hz)
       const pct = Math.min(98, (t.mean_us / 33333) * 100);
       document.getElementById('lat-bar').style.width = Math.max(1, pct) + '%';
-      // Color by threshold
       const bar = document.getElementById('lat-bar');
       bar.style.background = t.mean_us < 1000 ? '#3ddc84' :
                              t.mean_us < 5000 ? '#ffeb3b' : '#ff4444';
+    }
+
+    if (msg.n_confirmed !== undefined) {
+      document.getElementById('track-counts').textContent =
+        `${msg.n_confirmed} confirmed  /  ${msg.n_tentative} tentative`;
     }
 
     if (msg.stats) {
